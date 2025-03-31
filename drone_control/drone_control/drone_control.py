@@ -18,26 +18,29 @@ class DroneControl(Node):
             depth=1
         )
 
+        self.declare_parameter('system_id', 1)  
+        self.system_id = self.get_parameter('system_id').value
+
         self.publisher_vehicle_command = self.create_publisher(
             VehicleCommand,
-            'fmu/in/vehicle_command',
+            f'/px4_{self.system_id}/fmu/in/vehicle_command',
             qos_profile
         )
 
         self.status_sub = self.create_subscription(
             VehicleStatus,
-            'fmu/out/vehicle_status',
+            f'/px4_{self.system_id}/fmu/out/vehicle_status',
             self.vehicle_status_callback,
             qos_profile)
 
         self.publisher_offboard_mode = self.create_publisher(
             OffboardControlMode, 
-            'fmu/in/offboard_control_mode', 
+            f'/px4_{self.system_id}/fmu/in/offboard_control_mode', 
             qos_profile)
         
         self.publisher_trajectory = self.create_publisher(
             TrajectorySetpoint,
-            'fmu/in/trajectory_setpoint',
+            f'/px4_{self.system_id}/fmu/in/trajectory_setpoint',
             qos_profile)
         
         timer_period = 0.02  
@@ -61,7 +64,9 @@ class DroneControl(Node):
         offboard_msg.velocity=False
         offboard_msg.acceleration=False
         self.publisher_offboard_mode.publish(offboard_msg)
+
         if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.arming_state == VehicleStatus.ARMING_STATE_ARMED:
+            
             trajectory_msg = TrajectorySetpoint()
             trajectory_msg.position[0] = 3
             trajectory_msg.position[1] = 3
@@ -75,9 +80,9 @@ class DroneControl(Node):
             set_offboard_msg.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
             set_offboard_msg.param1 = 1.0
             set_offboard_msg.param2 = 6.0
-            set_offboard_msg.target_system = 2
+            set_offboard_msg.target_system = self.system_id + 1
             set_offboard_msg.target_component = 1
-            set_offboard_msg.source_system = 2 #experiment with 1
+            set_offboard_msg.source_system = self.system_id + 1
             set_offboard_msg.source_component = 1
             set_offboard_msg.from_external = True
 
@@ -89,9 +94,9 @@ class DroneControl(Node):
             arm_msg.timestamp = int(Clock().now().nanoseconds / 1000 )
             arm_msg.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
             arm_msg.param1 = 1.0
-            arm_msg.target_system = 2
+            arm_msg.target_system = self.system_id + 1
             arm_msg.target_component = 1
-            arm_msg.source_system = 2
+            arm_msg.source_system = self.system_id + 1
             arm_msg.source_component= 1
             arm_msg.from_external = True
 
@@ -109,7 +114,7 @@ def main(args=None):
 
     offboard_control.destroy_node()
     rclpy.shutdown()
-0
+
 
 if __name__ == '__main__':
     main()
