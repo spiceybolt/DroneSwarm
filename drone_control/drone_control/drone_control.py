@@ -21,9 +21,10 @@ class DroneControl(Node):
         self.declare_parameter('system_id', 1)  
         self.system_id = self.get_parameter('system_id').value
 
-        self.publisher_vehicle_command = self.create_publisher(
-            VehicleCommand,
-            f'/px4_{self.system_id}/fmu/in/vehicle_command',
+        self.command_sub = self.create_subscription(
+            TrajectorySetpoint,
+            f'drone_{self.system_id}/setpoint',
+            self.command_callback,
             qos_profile
         )
 
@@ -32,6 +33,12 @@ class DroneControl(Node):
             f'/px4_{self.system_id}/fmu/out/vehicle_status',
             self.vehicle_status_callback,
             qos_profile)
+
+        self.publisher_vehicle_command = self.create_publisher(
+            VehicleCommand,
+            f'/px4_{self.system_id}/fmu/in/vehicle_command',
+            qos_profile
+        )    
 
         self.publisher_offboard_mode = self.create_publisher(
             OffboardControlMode, 
@@ -47,9 +54,17 @@ class DroneControl(Node):
         self.timer = self.create_timer(timer_period, self.cmdloop_callback)
         self.dt = timer_period
 
+        self.x = 3
+        self.y = 3
+        self.z = -5
+
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
         self.arming_state = VehicleStatus.ARMING_STATE_DISARMED
         
+    def command_callback(self, msg):
+        self.x = msg.position[0]
+        self.y = msg.position[1]
+        self.z = msg.position[2]
 
     def vehicle_status_callback(self, msg):
         print("NAV_STATUS: ", msg.nav_state)
@@ -68,9 +83,9 @@ class DroneControl(Node):
         if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.arming_state == VehicleStatus.ARMING_STATE_ARMED:
             
             trajectory_msg = TrajectorySetpoint()
-            trajectory_msg.position[0] = 3
-            trajectory_msg.position[1] = 3
-            trajectory_msg.position[2] = -5
+            trajectory_msg.position[0] = self.x
+            trajectory_msg.position[1] = self.y
+            trajectory_msg.position[2] = self.z
             self.publisher_trajectory.publish(trajectory_msg)
             
         elif self.nav_state != VehicleStatus.NAVIGATION_STATE_OFFBOARD:

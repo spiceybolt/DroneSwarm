@@ -19,12 +19,12 @@ def generate_launch_description():
     num_drones = config['drones']['num_drones']
     pos = config['drones']['start_positions']
 
-    delay = 7.0
+    delay = 12.0
 
     processes = []
     for i in range(1,num_drones+1):
         proc = ExecuteProcess(
-                cmd = [f"PX4_SYS_AUTOSTART=4010 PX4_SIM_MODEL=gz_x500_mono_cam PX4_GZ_MODEL_POSE=\"{pos[i-1]['x']},{pos[i-1]['y']}, 0\" \
+                cmd = [f"PX4_SYS_AUTOSTART=4010 PX4_SIM_MODEL=gz_x500_mono_cam PX4_GZ_MODEL_POSE=\"{pos[i-1]['x']},{pos[i-1]['y']}\" \
                                  ~/PX4-Autopilot/build/px4_sitl_default/bin/px4 -i {i}"],
                 shell=True
             )

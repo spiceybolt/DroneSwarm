@@ -1,9 +1,13 @@
 drones:
-  num_drones: 3
+  num_drones: 5
   start_positions:
     - x: 0.0
       y: 0.0
     - x: 3.0
-      y: 3.0
+      y: 0.0
     - x: -3.0
-      y: -3.0
+      y: 0.0
+    - x: 6.0
+      y: 0.0
+    - x: -6.0
+      y: 0.0
