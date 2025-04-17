@@ -18,6 +18,12 @@ def generate_launch_description():
 
     num_drones = config['drones']['num_drones']
 
+    security_env = {
+        'ROS_SECURITY_ENABLE': 'true',
+        'ROS_SECURITY_STRATEGY': 'Permissive',  # Passive encryption
+        'ROS_SECURITY_KEYSTORE': os.path.expanduser('~/sros2_demo/demo_keystore')
+    }
+
     nodes = []
     for i in range(1,num_drones+1):
         nodes.append(
@@ -25,8 +31,24 @@ def generate_launch_description():
                 package = 'drone_control',
                 executable = 'drone_control_node',
                 name=f'drone_{i}',
-                parameters=[{'system_id': i}]
+                parameters=[{'system_id': i}]#,
+                # env=security_env
             )
         )
 
+    nodes.append(
+        Node(
+            package = 'drone_control',
+            executable = 'central_control_node'#,
+            # env=security_env
+        )
+    )
+
+    # nodes.append(
+        # Node(
+            # package = 'drone_control',
+            
+        # )
+    # )    
+    
     return LaunchDescription(nodes)

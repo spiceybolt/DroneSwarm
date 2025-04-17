@@ -4,6 +4,10 @@ from rclpy.node import Node
 from rclpy.clock import Clock
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
+from std_msgs.msg import String
+import tenseal as ts
+import base64
+
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleStatus, VehicleCommand
 
 class DroneControl(Node):
@@ -21,8 +25,19 @@ class DroneControl(Node):
         self.declare_parameter('system_id', 1)  
         self.system_id = self.get_parameter('system_id').value
 
+        self.ts_context = ts.context(
+            ts.SCHEME_TYPE.CKKS,
+            poly_modulus_degree=8192,
+            coeff_mod_bit_sizes=[60, 40, 60]
+        )
+
+        self.ts_context.generate_galois_keys()
+        self.ts_context.global_scale = 2**40
+
+
+
         self.command_sub = self.create_subscription(
-            TrajectorySetpoint,
+            String,
             f'drone_{self.system_id}/setpoint',
             self.command_callback,
             qos_profile
@@ -54,17 +69,38 @@ class DroneControl(Node):
         self.timer = self.create_timer(timer_period, self.cmdloop_callback)
         self.dt = timer_period
 
+        self.last_arm_attempt = self.get_clock().now()
+        self.arm_cooldown = 2.0 
+
         self.x = 3
         self.y = 3
-        self.z = -5
+        self.z = -15
 
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
         self.arming_state = VehicleStatus.ARMING_STATE_DISARMED
         
     def command_callback(self, msg):
-        self.x = msg.position[0]
-        self.y = msg.position[1]
-        self.z = msg.position[2]
+        try:
+            serialized = base64.b64decode(msg.data)
+            enc_vec = ts.ckks_vector_from(self.ts_context, serialized)
+            decrypted = enc_vec.decrypt()
+
+            # self.x, self.y, self.z = decrypted
+            if decrypted[0] < 100 and decrypted[0] > -100:
+                self.x = decrypted[0]
+            if decrypted[1] < 100 and decrypted[1] > -100:
+                self.y = decrypted[1]
+            if decrypted[2] < 100 and decrypted[2] > -100:
+                self.x = decrypted[2]        
+            
+            self.get_logger().info(f"{self.x} {self.y} {self.z} = {decrypted[0]} {decrypted[1]} {decrypted[2]}")
+        except Exception as e:
+            self.get_logger().error(f"Decryption failed: {e}")
+
+
+        # self.x = msg.position[0]
+        # self.y = msg.position[1]
+        # self.z = msg.position[2]
 
     def vehicle_status_callback(self, msg):
         print("NAV_STATUS: ", msg.nav_state)
@@ -88,8 +124,10 @@ class DroneControl(Node):
             trajectory_msg.position[2] = self.z
             self.publisher_trajectory.publish(trajectory_msg)
             
-        elif self.nav_state != VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+        if self.nav_state != VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             
+            self.get_logger().info(f"{self.system_id} is not offboard")
+
             set_offboard_msg = VehicleCommand()
             set_offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
             set_offboard_msg.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
@@ -103,7 +141,9 @@ class DroneControl(Node):
 
             self.publisher_vehicle_command.publish(set_offboard_msg)
 
-        elif self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.arming_state != VehicleStatus.ARMING_STATE_ARMED:
+        if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.arming_state != VehicleStatus.ARMING_STATE_ARMED:
+
+            self.get_logger().info(f"{self.system_id} not armed")
 
             arm_msg = VehicleCommand()
             arm_msg.timestamp = int(Clock().now().nanoseconds / 1000 )
@@ -115,7 +155,19 @@ class DroneControl(Node):
             arm_msg.source_component= 1
             arm_msg.from_external = True
 
-            self.publisher_vehicle_command.publish(arm_msg)
+            if (self.get_clock().now() - self.last_arm_attempt).nanoseconds > 1e9 * self.arm_cooldown:
+                self.publisher_vehicle_command.publish(arm_msg)
+                self.last_arm_attempt = self.get_clock().now()
+
+            # cmd = VehicleCommand()
+            # cmd.command = VehicleCommand.VEHICLE_CMD_DO_SET_HOME
+
+            # cmd.param1 = 1.0  # Use current position
+            # cmd.param5 = 0.0  # Force latitude
+            # cmd.param6 = 0.0  # Force longitude
+            # cmd.param7 = 0.0  # Force altitude
+
+            # self.publisher_vehicle_command.publish(cmd)
 
 
 
