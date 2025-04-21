@@ -11,6 +11,7 @@ from std_msgs.msg import String
 import tenseal as ts
 import base64
 import json
+import math
 
 from px4_msgs.msg import TrajectorySetpoint
 
@@ -27,7 +28,6 @@ class CentralControl(Node):
         )
 
         
-
         config_path = os.path.join(get_package_share_directory('drone_launch'),'config','config.yaml')
 
         with open(config_path, 'r') as file:
@@ -44,6 +44,11 @@ class CentralControl(Node):
         self.ts_context.generate_galois_keys()
         self.ts_context.global_scale = 2**40
 
+        self.context_bytes = self.ts_context.serialize(save_secret_key=True)
+
+        with open("ts_context.bin", "wb") as f:
+            f.write(self.context_bytes)
+
         self.publishers_list = []
 
         for i in range(self.num_drones):
@@ -56,15 +61,37 @@ class CentralControl(Node):
         self.time_period = 0.01
         self.timer = self.create_timer(self.time_period, self.publish)
 
+        self.radius = 5.0
+        self.angular_speed = 0.2  # radians per second
+        self.altitude = -15.0     # Fixed z altitude
+
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
+
         self.ypos = 0.0
         self.coeff = 1
 
         self.alt = -15.0
 
     def publish(self):
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        t = current_time - self.start_time
+        angle = self.angular_speed * t
+
         for i in range(self.num_drones):
 
-            vec = [3 * i, self.ypos, self.alt]
+            offset_x = self.pos[i]['x']
+            offset_y = self.pos[i]['y']
+
+            center_x = self.radius * math.cos(angle)
+            center_y = self.radius * math.sin(angle)
+
+            # Maintain formation relative to circular center
+            target_x = center_x + offset_x
+            target_y = center_y + offset_y
+            target_z = self.altitude
+
+            # vec = [3 * i, self.ypos, self.alt]
+            vec = [target_x, target_y, target_z]
             enc_vec = ts.ckks_vector(self.ts_context, vec)
             serialized = enc_vec.serialize()
             encoded = base64.b64encode(serialized).decode('utf-8')
@@ -99,6 +126,12 @@ def main(args=None):
 
     central_control.destroy_node()
     rclpy.shutdown()
+    file_path = "ts_context.bin"
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        print(f"{file_path} has been deleted.")
+    else:
+        print(f"{file_path} does not exist.")
 
 
 if __name__ == '__main__':
